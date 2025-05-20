@@ -5,8 +5,9 @@
 [![Keras](https://img.shields.io/badge/Keras-2.x-red.svg)](https://keras.io/)
 [![NumPy](https://img.shields.io/badge/NumPy-1.19+-green.svg)](https://numpy.org/)
 [![Pandas](https://img.shields.io/badge/Pandas-1.1+-purple.svg)](https://pandas.pydata.org/)
+[![TensorFlow Embedding Projector](https://img.shields.io/badge/Embedding%20Projector-TensorBoard-blueviolet.svg)](https://projector.tensorflow.org/)
 
-A comprehensive tutorial on text preprocessing and data preparation for natural language processing using TensorFlow. This project demonstrates essential NLP techniques including data loading, text standardization, tokenization, and sequence encoding using the BBC News Classification Dataset.
+A comprehensive tutorial on text preprocessing and neural network classification for natural language processing using TensorFlow. This project demonstrates essential NLP techniques including data loading, text standardization, tokenization, and embedding-based classification using the BBC News Classification Dataset.
 
 ![Text Processing Pipeline](text-processing-pipeline.png)
 
@@ -15,8 +16,8 @@ A comprehensive tutorial on text preprocessing and data preparation for natural 
 ## Table of Contents 📋
 - [Project Overview](#project-overview-)
 - [Dataset Details](#dataset-details-)
-- [Processing Pipeline](#processing-pipeline-)
-- [Implementation Steps](#implementation-steps-)
+- [Phase 1: Data Preprocessing Pipeline](#phase-1-data-preprocessing-pipeline-)
+- [Phase 2: Neural Network Classification & Embedding Visualization](#phase-2-neural-network-classification--embedding-visualization-)
 - [Results](#results-)
 - [Real-World Applications](#real-world-applications-)
 - [Installation & Usage](#installation--usage-)
@@ -29,20 +30,23 @@ A comprehensive tutorial on text preprocessing and data preparation for natural 
 
 ## Project Overview 🔎
 
-This project implements the foundational data preprocessing steps required for text classification tasks. Using the BBC News dataset as a practical example, we explore how to transform raw text data into numerical representations suitable for machine learning models.
+This project implements a complete text classification pipeline from data preprocessing to neural network training and visualization. Using the BBC News dataset as a practical example, we explore how to transform raw text data into numerical representations suitable for machine learning models, then build and train a classification neural network.
 
 **Key Objectives:**
 - Parse and load text data from CSV files
 - Standardize text by removing stopwords and converting to lowercase
 - Vectorize text using TensorFlow's TextVectorization layer
 - Encode categorical labels for multi-class classification
-- Prepare data for neural network training
+- Build and train a neural network with embedding layers
+- Achieve high classification accuracy (>95% training, >90% validation)
+- Visualize learned word embeddings in 3D space
 
 **Technical Stack:**
-- TensorFlow 2.x and Keras for text processing
+- TensorFlow 2.x and Keras for text processing and neural networks
 - Python standard library (csv) for file operations
-- NumPy and Pandas for data manipulation
-- Python 3.6+ for implementation
+- NumPy for data manipulation
+- Matplotlib for visualization
+- TensorFlow Embedding Projector for 3D embedding visualization
 
 ---
 
@@ -62,7 +66,6 @@ category,text
 tech,"tv future in the hands of viewers with home..."
 business,"worldcom boss left books alone former worldcom..."
 sport,"tigers wary of farrell gamble leicester say they..."
-```
 
 **Key Characteristics:**
 - Each row contains a category label and the full article text
@@ -72,166 +75,194 @@ sport,"tigers wary of farrell gamble leicester say they..."
 
 ---
 
-## Processing Pipeline 🔄
+## Phase 1: Data Preprocessing Pipeline 🔄
 
-The text preprocessing pipeline consists of four main steps:
+### Overview
+The first phase focuses on foundational text preprocessing and data preparation for neural network training. The objective is to establish a robust pipeline that handles data cleaning, tokenization, sequence padding, and label encoding.
 
-### 1. Data Loading 📂
+### Processing Steps
+
+#### 1. Data Loading & Splitting 📂
 ```python
-def parse_data_from_file(filename):
-    """Load sentences and labels from CSV"""
-    sentences = []
-    labels = []
+def train_val_datasets(data):
+    """Split data into training (80%) and validation (20%) sets"""
+    train_size = int(len(data) * TRAINING_SPLIT)
     
-    with open(filename, 'r') as csvfile:
-        reader = csv.reader(csvfile)
-        next(reader)  # Skip header
-        for row in reader:
-            if row:
-                labels.append(row[0])
-                sentences.append(row[1])
+    texts = data[:, 1]
+    labels = data[:, 0]
     
-    return sentences, labels
+    train_texts = texts[:train_size]
+    validation_texts = texts[train_size:]
+    train_labels = labels[:train_size]
+    validation_labels = labels[train_size:]
+    
+    train_dataset = tf.data.Dataset.from_tensor_slices((train_texts, train_labels))
+    validation_dataset = tf.data.Dataset.from_tensor_slices((validation_texts, validation_labels))
+    
+    return train_dataset, validation_dataset
 ```
 
 ### 2. Text Standardization 🔤
 ```python
 def standardize_func(sentence):
-    """Convert to lowercase and remove stopwords"""
+    """Remove stopwords, punctuation, and convert to lowercase"""
     # Convert to lowercase
-    sentence = sentence.lower()
+    sentence = tf.strings.lower(sentence)
     
-    # Split into words
-    words = sentence.split()
+    # Remove stopwords (161 common English words)
+    stopwords = ["a", "about", "above", "after", ...]
+    for word in stopwords:
+        sentence = tf.strings.regex_replace(sentence, rf"\b{word}\b", "")
     
-    # Remove stopwords
-    filtered_words = [word for word in words if word not in STOPWORDS]
+    # Remove punctuation
+    sentence = tf.strings.regex_replace(sentence, r'[!"#$%&()\*\+,-\./:;<=>?@\[\\\]^_`{|}~\']', "")
     
-    return " ".join(filtered_words)
+    return sentence
 ```
 
 ### 3. Text Vectorization 🔢
 ```python
-def fit_vectorizer(sentences):
+def fit_vectorizer(train_sentences, standardize_func):
     """Create and adapt TextVectorization layer"""
-    vectorizer = tf.keras.layers.TextVectorization()
-    vectorizer.adapt(sentences)
+    vectorizer = tf.keras.layers.TextVectorization(
+        standardize=standardize_func,
+        max_tokens=VOCAB_SIZE,
+        output_sequence_length=MAX_LENGTH
+    )
+    vectorizer.adapt(train_sentences)
     return vectorizer
 ```
 
 ### 4. Label Encoding 🏷️
 ```python
-def fit_label_encoder(labels):
-    """Create StringLookup for label encoding"""
+def fit_label_encoder(train_labels, validation_labels):
+    """Create StringLookup for label encoding without OOV tokens"""
+    labels = train_labels.concatenate(validation_labels)
     label_encoder = tf.keras.layers.StringLookup(num_oov_indices=0)
     label_encoder.adapt(labels)
     return label_encoder
 ```
 
+### 5. Key Configuration
+```python
+VOCAB_SIZE = 1000      # Maximum vocabulary size
+MAX_LENGTH = 120       # Sequence length (padded/truncated)
+TRAINING_SPLIT = 0.8   # Train/validation split ratio
+```
 ---
 
-## Implementation Steps 💻
+## Phase 2: Neural Network Classification & Embedding Visualization 🧠
 
-### Step 1: Data Loading
-First, we parse the BBC News CSV file to extract articles and their categories:
+### Overview
+Building upon Phase 1's preprocessing foundation, Phase 2 implements a complete text classification neural network with embedding visualization capabilities. The goal is to achieve high accuracy while learning meaningful word representations.
 
-```python
-# Load the data
-sentences, labels = parse_data_from_file("./data/bbc-text.csv")
-
-# Output statistics
-print(f"Dataset size: {len(sentences)} articles")
-print(f"Categories: {set(labels)}")
-print(f"First article length: {len(sentences[0].split())} words")
-```
-
-**Output:**
-- 2,225 articles loaded successfully
-- 5 unique categories identified
-- First article contains 737 words
-
-### Step 2: Text Standardization
-We clean the text by removing stopwords and converting to lowercase:
+### Neural Network Architecture
 
 ```python
-# Define stopwords list
-STOPWORDS = ["a", "about", "above", "after", "again", "against", ...]
+def create_model():
+    """Build embedding-based classification model"""
+    model = tf.keras.Sequential([
+        tf.keras.Input(shape=(MAX_LENGTH,)),
+        tf.keras.layers.Embedding(input_dim=VOCAB_SIZE, output_dim=EMBEDDING_DIM),
+        tf.keras.layers.GlobalAveragePooling1D(),
+        tf.keras.layers.Dense(24, activation='relu'),
+        tf.keras.layers.Dense(5, activation='softmax')
+    ])
+    
+    model.compile(
+        loss='sparse_categorical_crossentropy',
+        optimizer='adam',
+        metrics=['accuracy']
+    )
+    
+    return model
+```
+---
 
-# Standardize all sentences
-standard_sentences = [standardize_func(sentence) for sentence in sentences]
+# Architecture Components
 
-# Compare before and after
-print(f"Original: {len(sentences[0].split())} words")
-print(f"Standardized: {len(standard_sentences[0].split())} words")
+- **Embedding Layer**: Converts word indices to 16-dimensional dense vectors
+- **Global Average Pooling**: Aggregates variable-length sequences into fixed-size vectors
+- **Hidden Dense Layer**: 24 neurons with ReLU activation for feature learning
+- **Output Layer**: 5 neurons with softmax for multi-class classification
+
+## Training Pipeline
+```python
+# Preprocess datasets with batching
+train_proc_dataset = preprocess_dataset(train_dataset, vectorizer, label_encoder)
+validation_proc_dataset = preprocess_dataset(validation_dataset, vectorizer, label_encoder)
+
+# Train model
+history = model.fit(
+    train_proc_dataset, 
+    epochs=30, 
+    validation_data=validation_proc_dataset
+)
 ```
 
-**Impact:**
-- Removes ~40% of words (common stopwords)
-- Normalizes text case for consistency
-- Reduces vocabulary size significantly
+---
 
-### Step 3: Text Vectorization
-Convert text to numerical sequences using TensorFlow:
+## 3D Word Embedding Visualization 🎨
+Generate files for TensorFlow Embedding Projector to explore learned word relationships:
 
 ```python
-# Create and fit vectorizer
-vectorizer = fit_vectorizer(standard_sentences)
+# Extract embedding layer
+embedding = model.layers[0]
 
-# Get vocabulary statistics
-vocabulary = vectorizer.get_vocabulary()
-print(f"Vocabulary size: {len(vocabulary)} unique words")
+# Create metadata file (word labels)
+with open('./metadata.tsv', "w") as f:
+    for word in vectorizer.get_vocabulary():
+        f.write("{}\n".format(word))
 
-# Vectorize sentences
-sequences = vectorizer(standard_sentences)
-print(f"Sequence shape: {sequences.shape}")
+# Extract embedding weights
+weights = tf.Variable(embedding.get_weights()[0][1:])
+with open('./weights.tsv', 'w') as f: 
+    for w in weights:
+        f.write('\t'.join([str(x) for x in w.numpy()]) + "\n")
 ```
 
-**Results:**
-- Vocabulary of 33,088 unique words
-- Each text converted to fixed-length sequence
-- Includes [UNK] token for out-of-vocabulary words
+## To explore embeddings:
 
-### Step 4: Label Encoding
-Encode categorical labels as integers:
+1. Run the notebook to generate `metadata.tsv` and `weights.tsv`
+2. Upload files to [TensorFlow Embedding Projector](https://projector.tensorflow.org/)
+3. Explore semantic relationships between news vocabulary in 3D space
 
-```python
-# Create and fit label encoder
-label_encoder = fit_label_encoder(labels)
-
-# Get label mapping
-label_vocab = label_encoder.get_vocabulary()
-print(f"Label categories: {label_vocab}")
-
-# Encode labels
-encoded_labels = label_encoder(labels)
-print(f"Encoded labels shape: {encoded_labels.shape}")
-```
-
-**Mapping:**
-- sport → 0
-- business → 1
-- politics → 2
-- tech → 3
-- entertainment → 4
+![Embedding Projector Demo](demo.gif)
 
 ---
 
 ## Results 📈
 
+### Phase 1 Results
 After preprocessing, our data is ready for model training:
 
 | Preprocessing Step | Input | Output |
 |-------------------|-------|--------|
 | Data Loading | CSV file | 2,225 texts + labels |
-| Standardization | Raw text | Clean text (436 words avg) |
-| Vectorization | Text strings | Integer sequences |
+| Train/Val Split | Full dataset | 1,780 train + 445 validation |
+| Standardization | Raw text | Clean text (reduced vocabulary) |
+| Vectorization | Text strings | Integer sequences (1000 vocab) |
 | Label Encoding | String labels | Integer labels (0-4) |
 
-**Key Achievements:**
-- ✅ Successfully loaded and parsed CSV data
-- ✅ Reduced vocabulary by removing stopwords
-- ✅ Created consistent numerical representations
-- ✅ Prepared data for neural network training
+### Phase 2 Results
+The neural network achieves excellent classification performance:
+
+| Metric | Target | Achieved | Status |
+|--------|--------|----------|--------|
+| Training Accuracy | ≥95% | ~100% | ✅ |
+| Validation Accuracy | ≥90% | ~95% | ✅ |
+| Training Time | <30 epochs | 30 epochs | ✅ |
+| Model Parameters | Efficient | 16,533 params | ✅ |
+| Convergence | Stable | Smooth, no overfitting | ✅ |
+
+### Key Achievements:
+- ✅ Successfully loaded and preprocessed 2,225 news articles
+- ✅ Built efficient neural network with embedding layers
+- ✅ Achieved target accuracy thresholds
+- ✅ Generated 3D embedding visualizations
+- ✅ Demonstrated stable training without overfitting
+
+![Training Curve](training-curve.png)
 
 ---
 
@@ -302,41 +333,63 @@ jupyter notebook BBC_News_Text_Processing.ipynb
 
 ## Key Learnings 💡
 
-This project teaches several fundamental NLP concepts:
+This project teaches several fundamental NLP and deep learning concepts:
 
+### Phase 1 - Text Processing
 1. **CSV Data Handling**: Working with real-world text datasets
 2. **Text Standardization**: Importance of consistent preprocessing
 3. **Stopword Removal**: Reducing noise in text data
 4. **Tokenization**: Converting text to numerical format
-5. **Sequence Padding**: Creating uniform input sizes
-6. **Label Encoding**: Handling categorical targets
+5. **Sequence Padding**: Creating uniform input sizes for neural networks
+6. **Label Encoding**: Handling categorical targets efficiently
+
+### Phase 2 - Neural Networks & Embeddings
+1. **Embedding Layers**: Learning dense word representations
+2. **Model Architecture**: Designing effective text classifiers
+3. **Training Monitoring**: Tracking convergence and avoiding overfitting
+4. **Hyperparameter Tuning**: Optimizing vocabulary size and embedding dimensions
+5. **Embedding Visualization**: Understanding learned word relationships
 
 **Best Practices:**
 - Always examine your data before preprocessing
-- Create reusable preprocessing functions
+- Create reusable, modular preprocessing functions
 - Validate preprocessing steps with examples
+- Monitor both training and validation metrics
 - Consider computational efficiency for large datasets
+- Use visualization tools to understand model behavior
 
 ---
 
 ## Future Improvements 🚀
 
-Potential enhancements for this preprocessing pipeline:
+Potential enhancements for this text classification pipeline:
 
-1. **Advanced Tokenization**: Use subword tokenization (BPE, WordPiece)
-2. **Custom Stopwords**: Domain-specific stopword lists
-3. **Stemming/Lemmatization**: Further text normalization
-4. **N-grams**: Capture phrase-level information
-5. **TF-IDF Weighting**: Alternative to simple tokenization
-6. **Data Augmentation**: Synthetic data generation
-7. **Multilingual Support**: Extend to other languages
+### Advanced Techniques
+1. **Subword Tokenization**: Implement BPE or WordPiece for better OOV handling
+2. **Attention Mechanisms**: Add attention layers for better context understanding
+3. **Transfer Learning**: Fine-tune pre-trained models (BERT, RoBERTa)
+4. **Advanced Architectures**: Experiment with Transformers or CNNs
+5. **Ensemble Methods**: Combine multiple models for improved accuracy
+
+### Engineering Enhancements
+1. **Real-time Inference**: Create REST API for live classification
+2. **Model Monitoring**: Implement drift detection and retraining pipelines
+3. **A/B Testing**: Framework for comparing model versions
+4. **Scalability**: Distributed training for larger datasets
+5. **MLOps Integration**: CI/CD pipelines for model deployment
+
+### Data Improvements
+1. **Data Augmentation**: Synthetic text generation for minority classes
+2. **Active Learning**: Smart sampling for annotation efficiency
+3. **Multilingual Support**: Extend to international news sources
+4. **Custom Stopwords**: Domain-specific stopword lists
+5. **Stemming/Lemmatization**: Further text normalization
 
 **Next Steps:**
-- Build and train a classification model
-- Implement model evaluation metrics
-- Deploy as a web service
-- Add real-time prediction capabilities
-
+- Implement real-time prediction capabilities
+- Add comprehensive model evaluation metrics
+- Create interactive classification demo
+  
 ---
 
 ## Acknowledgments 🙏
