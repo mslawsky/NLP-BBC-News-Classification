@@ -9,8 +9,6 @@
 
 A comprehensive tutorial on text preprocessing and neural network classification for natural language processing using TensorFlow. This project demonstrates essential NLP techniques including data loading, text standardization, tokenization, and embedding-based classification using the BBC News Classification Dataset.
 
-![Text Processing Pipeline](text-processing-pipeline.png)
-
 ---
 
 ## Table of Contents 📋
